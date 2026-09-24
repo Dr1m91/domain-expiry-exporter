@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,10 +14,10 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/dr1m91/domain-expiry-exporter/internal/collector"
+	"github.com/dr1m91/domain-expiry-exporter/internal/domain"
 	"github.com/dr1m91/domain-expiry-exporter/internal/probe"
-	"github.com/dr1m91/domain-expiry-exporter/internal/refresher"
 	"github.com/dr1m91/domain-expiry-exporter/internal/safeconfig"
-	cache "github.com/patrickmn/go-cache"
+	"github.com/dr1m91/domain-expiry-exporter/internal/scheduler"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
@@ -25,24 +26,19 @@ import (
 
 // nolint: gochecknoglobals
 var (
-	bind       = kingpin.Flag("bind", "addr to bind the server").Short('b').Default(":9222").String()
-	debug      = kingpin.Flag("debug", "show debug logs").Default("false").Bool()
-	format     = kingpin.Flag("logFormat", "log format to use").Default("console").Enum("json", "console")
-	interval   = kingpin.Flag("cache", "time to cache the result of whois calls").Default("2h").Duration()
-	timeout    = kingpin.Flag("timeout", "timeout for each domain").Default("10s").Duration()
-	configFile = kingpin.Flag("config", "configuration file").String()
-	version    = "dev"
+	bind         = kingpin.Flag("bind", "addr to bind the server").Short('b').Default(":9222").String()
+	debug        = kingpin.Flag("debug", "show debug logs").Default("false").Bool()
+	format       = kingpin.Flag("logFormat", "log format to use").Default("console").Enum("json", "console")
+	concurrency  = kingpin.Flag("concurrency", "max concurrent RDAP/whois checks").Default("20").Int()
+	scanInterval = kingpin.Flag("scan-interval", "how often the scheduler scans for due domains").Default("1m").Duration()
+	configFile   = kingpin.Flag("config", "optional static list of domains to seed (for setups without vmagent /probe scraping)").String()
+	version      = "dev"
 )
 
 func main() {
-	kingpin.Version("domain_exporter version " + version)
+	kingpin.Version("domain-expiry-exporter version " + version)
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
-
-	urlPrefix, urlPrefixOK := os.LookupEnv("DOMAIN_EXPORTER_URL_PREFIX")
-	if !urlPrefixOK {
-		urlPrefix = ""
-	}
 
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	if *format == "console" {
@@ -53,10 +49,31 @@ func main() {
 		log.Debug().Msg("enabled debug mode")
 	}
 
-	log.Info().Msgf("starting domain_exporter %s", version)
-	cfg, err := safeconfig.New(*configFile)
-	if err != nil {
-		log.Fatal().Err(err).Msg("error to create config")
+	log.Info().Msgf("starting domain-expiry-exporter %s", version)
+
+	store := domain.NewInMemoryStore()
+	client := probe.NewMultiClient(probe.NewRDAPClient(), probe.NewWhoisClient())
+
+	if *configFile != "" {
+		cfg, err := safeconfig.New(*configFile)
+		if err != nil {
+			log.Fatal().Err(err).Msg("error to create config")
+		}
+		for _, d := range cfg.Domains {
+			if _, ok, _ := store.Get(d.Name); !ok {
+				if err := store.Set(domain.Entry{Domain: d.Name}); err != nil {
+					log.Error().Err(err).Msgf("failed to seed %s from config", d.Name)
+				}
+			}
+		}
+		log.Info().Msgf("seeded %d domains from config file", len(cfg.Domains))
+	}
+
+	sched := &scheduler.Scheduler{
+		Store:        store,
+		Client:       client,
+		Concurrency:  *concurrency,
+		ScanInterval: *scanInterval,
 	}
 
 	wg := &sync.WaitGroup{}
@@ -65,35 +82,27 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cache := cache.New(*interval, *interval)
-	cli := probe.NewMultiClient(probe.NewRDAPClient(), probe.NewWhoisClient())
-	cachedClient := probe.NewCachedClient(cli, cache)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sched.Run(ctx)
+	}()
 
-	if len(cfg.Domains) != 0 {
-		wg.Go(func() {
-			fresh := refresher.New(*interval, cachedClient, *timeout*time.Duration(len(cfg.Domains)), cfg.Domains...)
-			defer fresh.Stop()
-			fresh.Run(ctx)
-		})
-
-		domainCollector := collector.NewDomainCollector(cachedClient, *timeout*time.Duration(len(cfg.Domains)), cfg.Domains...)
-		prometheus.DefaultRegisterer.MustRegister(domainCollector)
-	}
+	prometheus.DefaultRegisterer.MustRegister(collector.NewDomainCollector(store))
 
 	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/probe", probeHandler(cachedClient))
+	http.HandleFunc("/probe", probeHandler(store))
+	http.HandleFunc("/debug/store", debugStoreHandler(store))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprintf(
-			w, `
+		_, _ = fmt.Fprint(w, `
 			<html>
 			<head><title>Domain Exporter</title></head>
 			<body>
 				<h1>Domain Exporter</h1>
-				<p><a href="%[1]s/metrics">Metrics</a></p>
-				<p><a href="%[1]s/probe?target=google.com">probe google.com</a></p>
+				<p><a href="/metrics">Metrics</a></p>
 			</body>
 			</html>
-			`, urlPrefix,
+			`,
 		)
 	})
 
@@ -111,7 +120,9 @@ func runServerWithGracefullyShutdown(wg *sync.WaitGroup) error {
 
 	server := &http.Server{Addr: *bind}
 
-	wg.Go(func() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		sig := <-signalChan
 
 		log.Warn().Msgf("got %s signal. Shutdown", sig)
@@ -121,7 +132,7 @@ func runServerWithGracefullyShutdown(wg *sync.WaitGroup) error {
 		if err := server.Shutdown(ctx); err != nil {
 			log.Error().Err(err).Msg("failed to shutdown http server")
 		}
-	})
+	}()
 
 	log.Info().Msgf("listening on %s", *bind)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -131,20 +142,51 @@ func runServerWithGracefullyShutdown(wg *sync.WaitGroup) error {
 	return nil
 }
 
-func probeHandler(cli probe.Client) http.HandlerFunc {
+// TODO: Collect() currently returns metrics for every known domain, not
+// just the requested target. For strict blackbox-style /probe semantics,
+// filter to a single domain (e.g. via a dedicated single-domain collector).
+func probeHandler(store domain.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		params := r.URL.Query()
-		target := strings.TrimPrefix(params.Get("target"), "www.")
-		host := params.Get("host")
+		target := strings.TrimPrefix(r.URL.Query().Get("target"), "www.")
 		if target == "" {
-			log.Error().Msg("target parameter missing")
 			http.Error(w, "target parameter is missing", http.StatusBadRequest)
 			return
 		}
 
-		registry := prometheus.NewRegistry()
-		registry.MustRegister(collector.NewDomainCollector(cli, *timeout, safeconfig.Domain{Name: target, Host: host}))
+		entry, ok, err := store.Get(target)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 
+		now := time.Now()
+		if !ok {
+			entry = domain.Entry{Domain: target}
+		}
+		entry.LastRequestedAt = now
+		if err := store.Set(entry); err != nil {
+			log.Error().Err(err).Msgf("failed to record heartbeat for %s", target)
+		}
+
+		registry := prometheus.NewRegistry()
+		registry.MustRegister(collector.NewDomainCollector(store))
 		promhttp.HandlerFor(registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
+	}
+}
+
+// TODO: this endpoint dumps the entire registry unauthenticated; fine for
+// local development, but should be removed or gated behind a flag
+// (e.g. --enable-debug-endpoints) before staging/production.
+func debugStoreHandler(store domain.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entries, err := store.List()
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(entries)
 	}
 }

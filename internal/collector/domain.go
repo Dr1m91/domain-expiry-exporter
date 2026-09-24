@@ -1,104 +1,79 @@
 package collector
 
 import (
-	"context"
 	"math"
 	"sync"
 	"time"
 
-	"github.com/dr1m91/domain-expiry-exporter/internal/probe"
-	"github.com/dr1m91/domain-expiry-exporter/internal/safeconfig"
+	"github.com/dr1m91/domain-expiry-exporter/internal/domain"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rs/zerolog/log"
 )
 
 type domainCollector struct {
-	mutex   sync.Mutex
-	client  probe.Client
-	domains []safeconfig.Domain
-	timeout time.Duration
+	mutex sync.Mutex
+	store domain.Store
 
-	expiryDays    *prometheus.Desc
-	probeSuccess  *prometheus.Desc
-	probeDuration *prometheus.Desc
+	expiryDays        *prometheus.Desc
+	probeSuccess      *prometheus.Desc
+	lastSuccessSecods *prometheus.Desc
 }
 
-// NewDomainCollector returns a domain collector.
-func NewDomainCollector(client probe.Client, timeout time.Duration, domains ...safeconfig.Domain) prometheus.Collector {
+// NewDomainCollector returns a collector that reads domain state from store.
+func NewDomainCollector(store domain.Store) prometheus.Collector {
 	const namespace = "domain"
-	const subsystem = ""
 	return &domainCollector{
-		client:  client,
-		domains: domains,
-		timeout: timeout,
+		store: store,
 		expiryDays: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, subsystem, "expiry_days"),
+			prometheus.BuildFQName(namespace, "", "expiry_days"),
 			"time in days until the domain expires",
 			[]string{"domain"},
 			nil,
 		),
 		probeSuccess: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, subsystem, "probe_success"),
-			"whether the probe was successful or not",
+			prometheus.BuildFQName(namespace, "", "probe_success"),
+			"whether we have ever successfully probed this domain",
 			[]string{"domain"},
 			nil,
 		),
-		probeDuration: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, subsystem, "probe_duration_seconds"),
-			"returns how long the probe took to complete in seconds",
+		lastSuccessSecods: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "", "last_success_timestamp_seconds"),
+			"unix timestamp of the last successful probe",
 			[]string{"domain"},
 			nil,
 		),
 	}
 }
 
-// Describe all metrics
 func (c *domainCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.expiryDays
-	ch <- c.probeDuration
 	ch <- c.probeSuccess
+	ch <- c.lastSuccessSecods
 }
 
-// Collect all metrics
 func (c *domainCollector) Collect(ch chan<- prometheus.Metric) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
+	entries, err := c.store.List()
+	if err != nil {
+		return
+	}
 
-	for _, domain := range c.domains {
-		start := time.Now()
-		date, err := c.client.ExpireTime(ctx, domain.Name, domain.Host)
-		if err != nil {
-			log.Error().Err(err).Msgf("failed to probe %s", domain)
+	for _, entry := range entries {
+		if !entry.HasEverSucceeded() {
+			continue
 		}
 
-		success := err == nil
 		ch <- prometheus.MustNewConstMetric(
-			c.probeSuccess,
-			prometheus.GaugeValue,
-			boolToFloat(success),
-			domain.Name,
+			c.probeSuccess, prometheus.GaugeValue, 1, entry.Domain,
 		)
 		ch <- prometheus.MustNewConstMetric(
-			c.expiryDays,
-			prometheus.GaugeValue,
-			math.Floor(time.Until(date).Hours()/24),
-			domain.Name,
+			c.expiryDays, prometheus.GaugeValue,
+			math.Floor(time.Until(entry.ExpireTime).Hours()/24), entry.Domain,
 		)
 		ch <- prometheus.MustNewConstMetric(
-			c.probeDuration,
-			prometheus.GaugeValue,
-			time.Since(start).Seconds(),
-			domain.Name,
+			c.lastSuccessSecods, prometheus.GaugeValue,
+			float64(entry.LastSuccessAt.Unix()), entry.Domain,
 		)
 	}
-}
-
-func boolToFloat(b bool) float64 {
-	if b {
-		return 1.0
-	}
-	return 0.0
 }
