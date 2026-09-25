@@ -80,6 +80,8 @@ func (c *domainCollector) Collect(ch chan<- prometheus.Metric) {
 
 // NewSingleDomainCollector returns a collector that reports metrics for
 // only one domain from store, for use in the blackbox-style /probe endpoint.
+// TODO: creates a throwaway *domainCollector on every call just to reuse
+// its metric descriptors; harmless at current scale, but worth cleaning up.
 func NewSingleDomainCollector(store domain.Store, target string) prometheus.Collector {
 	return &singleDomainCollector{store: store, target: target}
 }
