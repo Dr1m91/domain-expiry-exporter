@@ -17,17 +17,23 @@ type Scheduler struct {
 	Client       probe.Client
 	Concurrency  int
 	ScanInterval time.Duration
+	StaleAfter   time.Duration
 }
 
 func (s *Scheduler) Run(ctx context.Context) {
-	ticker := time.NewTicker(s.ScanInterval)
-	defer ticker.Stop()
+	scanTicker := time.NewTicker(s.ScanInterval)
+	defer scanTicker.Stop()
+
+	evictTicker := time.NewTicker(s.StaleAfter)
+	defer evictTicker.Stop()
 
 	s.scan(ctx)
 	for {
 		select {
-		case <-ticker.C:
+		case <-scanTicker.C:
 			s.scan(ctx)
+		case <-evictTicker.C:
+			s.evictStale(time.Now())
 		case <-ctx.Done():
 			log.Info().Msg("scheduler is finished")
 			return

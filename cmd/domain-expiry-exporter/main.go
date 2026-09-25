@@ -31,6 +31,7 @@ var (
 	format       = kingpin.Flag("logFormat", "log format to use").Default("console").Enum("json", "console")
 	concurrency  = kingpin.Flag("concurrency", "max concurrent RDAP/whois checks").Default("20").Int()
 	scanInterval = kingpin.Flag("scan-interval", "how often the scheduler scans for due domains").Default("1m").Duration()
+	staleAfter   = kingpin.Flag("stale-after", "evict a domain if Prometheus hasn't scraped it in this long").Default("24h").Duration()
 	configFile   = kingpin.Flag("config", "optional static list of domains to seed (for setups without vmagent /probe scraping)").String()
 	version      = "dev"
 )
@@ -74,6 +75,7 @@ func main() {
 		Client:       client,
 		Concurrency:  *concurrency,
 		ScanInterval: *scanInterval,
+		StaleAfter:   *staleAfter,
 	}
 
 	wg := &sync.WaitGroup{}
