@@ -36,8 +36,12 @@ func TestInMemoryStore_GetSetDelete(t *testing.T) {
 
 func TestInMemoryStore_List(t *testing.T) {
 	s := NewInMemoryStore()
-	s.Set(Entry{Domain: "a.com"})
-	s.Set(Entry{Domain: "b.com"})
+	if err := s.Set(Entry{Domain: "a.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set(Entry{Domain: "b.com"}); err != nil {
+		t.Fatal(err)
+	}
 
 	got, err := s.List()
 	if err != nil {

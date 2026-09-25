@@ -20,8 +20,12 @@ func TestScheduler_scan(t *testing.T) {
 	store := domain.NewInMemoryStore()
 	now := time.Now()
 
-	store.Set(domain.Entry{Domain: "due.com", NextCheckAt: now.Add(-time.Minute)})
-	store.Set(domain.Entry{Domain: "not-due.com", NextCheckAt: now.Add(time.Hour)})
+	if err := store.Set(domain.Entry{Domain: "due.com", NextCheckAt: now.Add(-time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(domain.Entry{Domain: "not-due.com", NextCheckAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
 
 	s := &Scheduler{
 		Store:       store,

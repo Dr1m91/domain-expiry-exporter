@@ -10,6 +10,10 @@ import (
 )
 
 func TestWhoisParsing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live whois integration test in short mode")
+	}
+
 	for _, tt := range []struct {
 		domain  string
 		host    string
@@ -66,7 +70,7 @@ func TestWhoisParsing(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			t.Cleanup(cancel)
 
-			expiry, err := NewClient().ExpireTime(ctx, tt.domain, tt.host)
+			expiry, err := NewWhoisClient().ExpireTime(ctx, tt.domain, tt.host)
 			if err != nil {
 				errs := err.Error()
 				if strings.Contains(errs, "i/o timeout") {
