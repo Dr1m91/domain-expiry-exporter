@@ -142,9 +142,6 @@ func runServerWithGracefullyShutdown(wg *sync.WaitGroup) error {
 	return nil
 }
 
-// TODO: Collect() currently returns metrics for every known domain, not
-// just the requested target. For strict blackbox-style /probe semantics,
-// filter to a single domain (e.g. via a dedicated single-domain collector).
 func probeHandler(store domain.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		target := strings.TrimPrefix(r.URL.Query().Get("target"), "www.")
@@ -169,7 +166,7 @@ func probeHandler(store domain.Store) http.HandlerFunc {
 		}
 
 		registry := prometheus.NewRegistry()
-		registry.MustRegister(collector.NewDomainCollector(store))
+		registry.MustRegister(collector.NewSingleDomainCollector(store, target))
 		promhttp.HandlerFor(registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 	}
 }

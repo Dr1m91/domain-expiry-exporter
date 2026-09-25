@@ -69,11 +69,45 @@ func (c *domainCollector) Collect(ch chan<- prometheus.Metric) {
 		)
 		ch <- prometheus.MustNewConstMetric(
 			c.expiryDays, prometheus.GaugeValue,
-			math.Floor(time.Until(entry.ExpireTime).Hours()/24), entry.Domain,
+			mathFloorDays(entry), entry.Domain,
 		)
 		ch <- prometheus.MustNewConstMetric(
 			c.lastSuccessSecods, prometheus.GaugeValue,
 			float64(entry.LastSuccessAt.Unix()), entry.Domain,
 		)
 	}
+}
+
+// NewSingleDomainCollector returns a collector that reports metrics for
+// only one domain from store, for use in the blackbox-style /probe endpoint.
+func NewSingleDomainCollector(store domain.Store, target string) prometheus.Collector {
+	return &singleDomainCollector{store: store, target: target}
+}
+
+type singleDomainCollector struct {
+	store  domain.Store
+	target string
+}
+
+func (c *singleDomainCollector) Describe(ch chan<- *prometheus.Desc) {
+	base := NewDomainCollector(c.store).(*domainCollector)
+	base.Describe(ch)
+}
+
+func (c *singleDomainCollector) Collect(ch chan<- prometheus.Metric) {
+	entry, ok, err := c.store.Get(c.target)
+	if err != nil || !ok || !entry.HasEverSucceeded() {
+		return
+	}
+
+	base := NewDomainCollector(c.store).(*domainCollector)
+	ch <- prometheus.MustNewConstMetric(base.probeSuccess, prometheus.GaugeValue, 1, entry.Domain)
+	ch <- prometheus.MustNewConstMetric(base.expiryDays, prometheus.GaugeValue,
+		mathFloorDays(entry), entry.Domain)
+	ch <- prometheus.MustNewConstMetric(base.lastSuccessSecods, prometheus.GaugeValue,
+		float64(entry.LastSuccessAt.Unix()), entry.Domain)
+}
+
+func mathFloorDays(entry domain.Entry) float64 {
+	return math.Floor(time.Until(entry.ExpireTime).Hours() / 24)
 }
