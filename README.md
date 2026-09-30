@@ -1,21 +1,76 @@
 # domain-expiry-exporter
 
-RDAP-first Prometheus exporter for domain expiry monitoring, built for fleets
-of hundreds to thousands of domains without hitting registrar/RDAP rate limits.
+RDAP-first Prometheus exporter for domain expiry monitoring, built to scale
+to thousands of domains without hitting registrar rate limits.
+
+Domain checks run entirely in a background scheduler, decoupled from
+Prometheus scrapes. `/metrics` and `/probe` only ever read from an in-memory
+registry — they never make a network call, so scrape latency and RDAP/WHOIS
+availability are fully independent of each other.
+
+## Features
+
+- RDAP-first probing with automatic WHOIS fallback
+- Adaptive check intervals: domains close to expiry are checked more often,
+  domains far from expiry are checked less often
+- Bounded-concurrency background scheduler with per-cycle domain scanning
+- Non-blocking `/probe` and `/metrics` endpoints (blackbox-exporter compatible)
+- Automatic eviction of domains no longer being scraped
+- Works with a static `domains.yaml` config, or dynamically via Prometheus
+  scrape targets
+
+## Usage
+
+domain-expiry-exporter
+--bind=:9222
+--scan-interval=1m
+--stale-after=24h
+--concurrency=20
+
+
+Prometheus scrape config (blackbox-style, dynamic domain discovery):
+
+```yaml
+- job_name: domain-expiry
+  metrics_path: /probe
+  static_configs:
+    - targets: ["example.com", "another-example.com"]
+  relabel_configs:
+    - source_labels: [__address__]
+      target_label: __param_target
+    - target_label: __address__
+      replacement: domain-expiry-exporter:9222
+```
+
+Or seed a static list at startup with `--config=domains.yaml`:
+
+```yaml
+domains:
+  - example.com
+  - another-example.com
+```
+
+## Metrics
+
+| Metric | Description |
+|---|---|
+| `domain_expiry_days` | Days until the domain expires |
+| `domain_probe_success` | Whether the domain has ever been successfully probed |
+| `domain_last_success_timestamp_seconds` | Unix timestamp of the last successful probe |
+
+## Roadmap
+
+- [ ] Exponential backoff on repeated probe failures
+- [ ] Pluggable storage backend (Redis, for shared state across replicas)
+- [ ] Helm chart
 
 ## Origin
 
-This project started as a fork of [caarlos0/domain_exporter](https://github.com/caarlos0/domain_exporter),
-which was archived by its author in August 2026. The original exporter probes
-WHOIS/RDAP synchronously on every Prometheus scrape, which does not scale past
-a few hundred domains without hitting `i/o timeout` errors on the WHOIS/RDAP
-side. This project decouples probing from scraping via a background scheduler
-and adaptive polling intervals.
-
-## Status
-
-Early development (v0.1.0 scope): background poller, in-memory cache,
-non-blocking `/metrics`. See CHANGELOG.md / releases for progress.
+Started from [caarlos0/domain_exporter](https://github.com/caarlos0/domain_exporter)
+(archived August 2026), which probed WHOIS/RDAP synchronously on every scrape —
+workable for a handful of domains, but not for fleets in the thousands. This
+project keeps the original RDAP/WHOIS probing logic and rebuilds the caching
+and scheduling layer around it.
 
 ## License
 
