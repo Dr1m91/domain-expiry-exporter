@@ -13,6 +13,7 @@ availability are fully independent of each other.
 - RDAP-first probing with automatic WHOIS fallback
 - Adaptive check intervals: domains close to expiry are checked more often,
   domains far from expiry are checked less often
+- Exponential backoff on repeated probe failures
 - Bounded-concurrency background scheduler with per-cycle domain scanning
 - Non-blocking `/probe` and `/metrics` endpoints (blackbox-exporter compatible)
 - Automatic eviction of domains no longer being scraped
@@ -50,6 +51,14 @@ domains:
   - another-example.com
 ```
 
+## Helm chart
+
+```bash
+helm install domain-expiry-exporter oci://ghcr.io/dr1m91/charts/domain-expiry-exporter --version <version>
+```
+
+See [charts/domain-expiry-exporter/values.yaml](./charts/domain-expiry-exporter/values.yaml) for configuration options.
+
 ## Metrics
 
 | Metric | Description |
@@ -57,12 +66,11 @@ domains:
 | `domain_expiry_days` | Days until the domain expires |
 | `domain_probe_success` | Whether the domain has ever been successfully probed |
 | `domain_last_success_timestamp_seconds` | Unix timestamp of the last successful probe |
+| `domain_consecutive_failures` | Number of consecutive failed probe attempts since the last success |
 
 ## Roadmap
 
-- [ ] Exponential backoff on repeated probe failures
 - [ ] Pluggable storage backend (Redis, for shared state across replicas)
-- [ ] Helm chart
 
 ## Origin
 
