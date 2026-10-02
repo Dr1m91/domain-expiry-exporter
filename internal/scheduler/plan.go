@@ -6,13 +6,23 @@ import (
 	"github.com/dr1m91/domain-expiry-exporter/internal/domain"
 )
 
-// planNextCheck returns a copy of entry with NextCheckAt updated based on
-// how close ExpireTime is, relative to now.
-//
-// TODO: factor in entry.ConsecutiveFailures for exponential backoff on
-// repeated probe failures, instead of relying solely on ExpireTime.
 func planNextCheck(entry domain.Entry, now time.Time) domain.Entry {
+	if entry.ConsecutiveFailures > 0 {
+		entry.NextCheckAt = now.Add(backoffInterval(entry.ConsecutiveFailures))
+		return entry
+	}
+
 	daysUntilExpiry := int(entry.ExpireTime.Sub(now).Hours() / 24)
 	entry.NextCheckAt = now.Add(nextCheckInterval(daysUntilExpiry))
 	return entry
+}
+
+func backoffInterval(failures int) time.Duration {
+	const maxBackoff = time.Hour
+
+	if failures > 6 {
+		return maxBackoff
+	}
+
+	return time.Minute * time.Duration(1<<uint(failures-1))
 }

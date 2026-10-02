@@ -13,12 +13,12 @@ type domainCollector struct {
 	mutex sync.Mutex
 	store domain.Store
 
-	expiryDays        *prometheus.Desc
-	probeSuccess      *prometheus.Desc
-	lastSuccessSecods *prometheus.Desc
+	expiryDays          *prometheus.Desc
+	probeSuccess        *prometheus.Desc
+	lastSuccessSecods   *prometheus.Desc
+	consecutiveFailures *prometheus.Desc
 }
 
-// NewDomainCollector returns a collector that reads domain state from store.
 func NewDomainCollector(store domain.Store) prometheus.Collector {
 	const namespace = "domain"
 	return &domainCollector{
@@ -41,6 +41,12 @@ func NewDomainCollector(store domain.Store) prometheus.Collector {
 			[]string{"domain"},
 			nil,
 		),
+		consecutiveFailures: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "", "consecutive_failures"),
+			"number of consecutive failed probe attempts since the last success",
+			[]string{"domain"},
+			nil,
+		),
 	}
 }
 
@@ -48,6 +54,7 @@ func (c *domainCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.expiryDays
 	ch <- c.probeSuccess
 	ch <- c.lastSuccessSecods
+	ch <- c.consecutiveFailures
 }
 
 func (c *domainCollector) Collect(ch chan<- prometheus.Metric) {
@@ -60,6 +67,11 @@ func (c *domainCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	for _, entry := range entries {
+		ch <- prometheus.MustNewConstMetric(
+			c.consecutiveFailures, prometheus.GaugeValue,
+			float64(entry.ConsecutiveFailures), entry.Domain,
+		)
+
 		if !entry.HasEverSucceeded() {
 			continue
 		}
@@ -78,8 +90,6 @@ func (c *domainCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// NewSingleDomainCollector returns a collector that reports metrics for
-// only one domain from store, for use in the blackbox-style /probe endpoint.
 // TODO: creates a throwaway *domainCollector on every call just to reuse
 // its metric descriptors; harmless at current scale, but worth cleaning up.
 func NewSingleDomainCollector(store domain.Store, target string) prometheus.Collector {
@@ -98,11 +108,17 @@ func (c *singleDomainCollector) Describe(ch chan<- *prometheus.Desc) {
 
 func (c *singleDomainCollector) Collect(ch chan<- prometheus.Metric) {
 	entry, ok, err := c.store.Get(c.target)
-	if err != nil || !ok || !entry.HasEverSucceeded() {
+	if err != nil || !ok {
 		return
 	}
 
 	base := NewDomainCollector(c.store).(*domainCollector)
+	ch <- prometheus.MustNewConstMetric(base.consecutiveFailures, prometheus.GaugeValue, float64(entry.ConsecutiveFailures), entry.Domain)
+
+	if !entry.HasEverSucceeded() {
+		return
+	}
+
 	ch <- prometheus.MustNewConstMetric(base.probeSuccess, prometheus.GaugeValue, 1, entry.Domain)
 	ch <- prometheus.MustNewConstMetric(base.expiryDays, prometheus.GaugeValue,
 		mathFloorDays(entry), entry.Domain)
