@@ -61,5 +61,5 @@ jobs:
           sed -i "s/^version:.*/version: ${VERSION}/" charts/domain-expiry-exporter/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"${GITHUB_REF_NAME}\"/" charts/domain-expiry-exporter/Chart.yaml
           helm package charts/domain-expiry-exporter
-          helm push domain-expiry-exporter-${VERSION}.tgz oci://ghcr.io/dr1m91
+          helm push domain-expiry-exporter-${VERSION}.tgz oci://ghcr.io/dr1m91/charts
 
