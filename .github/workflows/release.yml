@@ -29,6 +29,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
 
   github-release:
     needs: docker
@@ -42,3 +44,22 @@ jobs:
       - uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.5.0
         with:
           generate_release_notes: true
+
+  chart:
+    needs: docker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.3.0
+      - run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+      - run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/domain-expiry-exporter/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${GITHUB_REF_NAME}\"/" charts/domain-expiry-exporter/Chart.yaml
+          helm package charts/domain-expiry-exporter
+          helm push domain-expiry-exporter-${VERSION}.tgz oci://ghcr.io/dr1m91
+

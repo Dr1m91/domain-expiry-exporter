@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "domain-expiry-exporter.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "domain-expiry-exporter.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "domain-expiry-exporter.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "domain-expiry-exporter.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "domain-expiry-exporter.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          args:
+            - --bind=:{{ .Values.exporter.port }}
+            - --scan-interval={{ .Values.exporter.scanInterval }}
+            - --stale-after={{ .Values.exporter.staleAfter }}
+            - --concurrency={{ .Values.exporter.concurrency }}
+            {{- if .Values.domains }}
+            - --config=/etc/domain-expiry-exporter/domains.yaml
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.exporter.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          {{- if .Values.domains }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/domain-expiry-exporter
+              readOnly: true
+          {{- end }}
+      {{- if .Values.domains }}
+      volumes:
+        - name: config
+          configMap:
+            defaultMode: 0600
+            name: {{ include "domain-expiry-exporter.fullname" . }}-domains
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,3 @@
+domain-expiry-exporter has been deployed.
+
+Metrics: http://{{ include "domain-expiry-exporter.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/metrics

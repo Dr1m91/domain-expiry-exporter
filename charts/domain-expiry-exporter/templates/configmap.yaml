@@ -1,0 +1,15 @@
+{{- if .Values.domains }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "domain-expiry-exporter.fullname" . }}-domains
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "domain-expiry-exporter.labels" . | nindent 4 }}
+data:
+  domains.yaml: |-
+    domains:
+    {{- range .Values.domains }}
+      - {{ . }}
+    {{- end }}
+{{- end }}

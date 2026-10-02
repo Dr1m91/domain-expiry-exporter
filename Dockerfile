@@ -3,7 +3,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /out/domain-expiry-exporter ./cmd/domain-expiry-exporter
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o /out/domain-expiry-exporter ./cmd/domain-expiry-exporter
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates

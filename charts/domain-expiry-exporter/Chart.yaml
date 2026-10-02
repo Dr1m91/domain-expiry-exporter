@@ -1,0 +1,12 @@
+apiVersion: v2
+name: domain-expiry-exporter
+description: RDAP-first Prometheus exporter for domain expiry monitoring, with adaptive background scheduling.
+type: application
+version: 0.1.0
+appVersion: "v0.2.0"
+home: https://github.com/dr1m91/domain-expiry-exporter
+sources:
+  - https://github.com/dr1m91/domain-expiry-exporter
+maintainers:
+  - name: dr1m91
+    url: https://github.com/dr1m91

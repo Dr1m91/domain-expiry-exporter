@@ -1,0 +1,63 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/dr1m91/domain-expiry-exporter
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+exporter:
+  port: 9222
+  scanInterval: "1m"
+  staleAfter: "24h"
+  concurrency: 20
+
+# Optional static list of domains to seed at startup.
+# Leave empty to rely entirely on Prometheus /probe scrapes for domain discovery.
+domains: []
+
+rules:
+  enabled: false
+  absent:
+    enabled: true
+  warning:
+    enabled: true
+    expiration: 60
+  critical:
+    enabled: true
+    expiration: 5
+  failed:
+    enabled: true
+
+# Vanilla Prometheus Operator discovery (disabled by default)
+serviceMonitor:
+  enabled: false
+  interval: 1m
+  labels: {}
+
+# VictoriaMetrics Operator discovery (disabled by default)
+vmServiceScrape:
+  enabled: false
+  interval: 1m
+  labels: {}
