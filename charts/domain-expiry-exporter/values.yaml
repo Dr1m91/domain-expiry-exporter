@@ -37,19 +37,6 @@ exporter:
 # Leave empty to rely entirely on Prometheus /probe scrapes for domain discovery.
 domains: []
 
-rules:
-  enabled: false
-  absent:
-    enabled: true
-  warning:
-    enabled: true
-    expiration: 60
-  critical:
-    enabled: true
-    expiration: 5
-  failed:
-    enabled: true
-
 # Vanilla Prometheus Operator discovery (disabled by default)
 serviceMonitor:
   enabled: false

@@ -7,7 +7,6 @@ require (
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/domainr/whois v0.1.0
 	github.com/openrdap/rdap v0.10.2
-	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus/client_golang v1.24.1
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/rs/zerolog v1.35.1
