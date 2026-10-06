@@ -20,21 +20,27 @@ import (
 	"github.com/dr1m91/domain-expiry-exporter/internal/scheduler"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
 // nolint: gochecknoglobals
 var (
-	bind         = kingpin.Flag("bind", "addr to bind the server").Short('b').Default(":9222").String()
-	debug        = kingpin.Flag("debug", "show debug logs").Default("false").Bool()
-	format       = kingpin.Flag("logFormat", "log format to use").Default("console").Enum("json", "console")
-	concurrency  = kingpin.Flag("concurrency", "max concurrent RDAP/whois checks").Default("20").Int()
-	scanInterval = kingpin.Flag("scan-interval", "how often the scheduler scans for due domains").Default("1m").Duration()
-	staleAfter   = kingpin.Flag("stale-after", "evict a domain if Prometheus hasn't scraped it in this long").Default("24h").Duration()
-	checkTimeout = kingpin.Flag("check-timeout", "timeout for a single RDAP/WHOIS check").Default("30s").Duration()
-	configFile   = kingpin.Flag("config", "optional static list of domains to seed (for setups without vmagent /probe scraping)").String()
-	version      = "dev"
+	bind            = kingpin.Flag("bind", "addr to bind the server").Short('b').Default(":9222").String()
+	debug           = kingpin.Flag("debug", "show debug logs").Default("false").Bool()
+	format          = kingpin.Flag("logFormat", "log format to use").Default("console").Enum("json", "console")
+	concurrency     = kingpin.Flag("concurrency", "max concurrent RDAP/whois checks").Default("20").Int()
+	scanInterval    = kingpin.Flag("scan-interval", "how often the scheduler scans for due domains").Default("1m").Duration()
+	staleAfter      = kingpin.Flag("stale-after", "evict a domain if Prometheus hasn't scraped it in this long").Default("24h").Duration()
+	checkTimeout    = kingpin.Flag("check-timeout", "timeout for a single RDAP/WHOIS check").Default("30s").Duration()
+	redisAddr       = kingpin.Flag("redis-addr", "Redis address host:port, empty keeps the cache in memory only").String()
+	redisUsername   = kingpin.Flag("redis-username", "Redis ACL username").String()
+	redisPassword   = kingpin.Flag("redis-password", "Redis password").Envar("REDIS_PASSWORD").String()
+	redisKey        = kingpin.Flag("redis-key", "Redis hash that holds persisted entries").Default("domain-expiry-exporter:entries").String()
+	persistInterval = kingpin.Flag("persist-interval", "how often changes are flushed to Redis").Default("10s").Duration()
+	configFile      = kingpin.Flag("config", "optional static list of domains to seed (for setups without vmagent /probe scraping)").String()
+	version         = "dev"
 )
 
 func main() {
@@ -53,7 +59,12 @@ func main() {
 
 	log.Info().Msgf("starting domain-expiry-exporter %s", version)
 
-	store := domain.NewInMemoryStore()
+	var store domain.Store = domain.NewInMemoryStore()
+	var persistent *domain.PersistentStore
+	if *redisAddr != "" {
+		persistent = newRedisStore()
+		store = persistent
+	}
 	client := probe.NewMultiClient(probe.NewRDAPClient(), probe.NewWhoisClient())
 
 	if *configFile != "" {
@@ -91,6 +102,14 @@ func main() {
 		defer wg.Done()
 		sched.Run(ctx)
 	}()
+
+	if persistent != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			persistent.Run(ctx, *persistInterval)
+		}()
+	}
 
 	prometheus.DefaultRegisterer.MustRegister(collector.NewDomainCollector(store))
 
@@ -190,4 +209,20 @@ func debugStoreHandler(store domain.Store) http.HandlerFunc {
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(entries)
 	}
+}
+
+func newRedisStore() *domain.PersistentStore {
+	rdb := redis.NewClient(&redis.Options{
+		Addr:         *redisAddr,
+		Username:     *redisUsername,
+		Password:     *redisPassword,
+		DialTimeout:  2 * time.Second,
+		ReadTimeout:  2 * time.Second,
+		WriteTimeout: 2 * time.Second,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return domain.NewPersistentStore(ctx, domain.NewRedisBackend(rdb, *redisKey))
 }
