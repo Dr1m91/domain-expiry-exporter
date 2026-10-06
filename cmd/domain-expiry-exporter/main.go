@@ -32,6 +32,7 @@ var (
 	concurrency  = kingpin.Flag("concurrency", "max concurrent RDAP/whois checks").Default("20").Int()
 	scanInterval = kingpin.Flag("scan-interval", "how often the scheduler scans for due domains").Default("1m").Duration()
 	staleAfter   = kingpin.Flag("stale-after", "evict a domain if Prometheus hasn't scraped it in this long").Default("24h").Duration()
+	checkTimeout = kingpin.Flag("check-timeout", "timeout for a single RDAP/WHOIS check").Default("30s").Duration()
 	configFile   = kingpin.Flag("config", "optional static list of domains to seed (for setups without vmagent /probe scraping)").String()
 	version      = "dev"
 )
@@ -62,7 +63,7 @@ func main() {
 		}
 		for _, d := range cfg.Domains {
 			if _, ok, _ := store.Get(d.Name); !ok {
-				if err := store.Set(domain.Entry{Domain: d.Name}); err != nil {
+				if err := store.Set(domain.Entry{Domain: d.Name, Static: true}); err != nil {
 					log.Error().Err(err).Msgf("failed to seed %s from config", d.Name)
 				}
 			}
@@ -76,6 +77,7 @@ func main() {
 		Concurrency:  *concurrency,
 		ScanInterval: *scanInterval,
 		StaleAfter:   *staleAfter,
+		CheckTimeout: *checkTimeout,
 	}
 
 	wg := &sync.WaitGroup{}

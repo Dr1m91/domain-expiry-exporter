@@ -13,10 +13,15 @@ type Entry struct {
 
 	LastRequestedAt time.Time
 	NextCheckAt     time.Time
+
+	Static bool
 }
 
 // IsStale reports whether domain hasn't been scraped in longer than maxAge.
 func (e Entry) IsStale(now time.Time, maxAge time.Duration) bool {
+	if e.Static {
+		return false
+	}
 	return now.Sub(e.LastRequestedAt) > maxAge
 }
 

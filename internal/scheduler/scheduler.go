@@ -18,6 +18,7 @@ type Scheduler struct {
 	Concurrency  int
 	ScanInterval time.Duration
 	StaleAfter   time.Duration
+	CheckTimeout time.Duration
 }
 
 func (s *Scheduler) Run(ctx context.Context) {
@@ -62,7 +63,13 @@ func (s *Scheduler) scan(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			checkDomain(ctx, s.Store, s.Client, entry, time.Now())
+			checkCtx := ctx
+			if s.CheckTimeout > 0 {
+				var cancel context.CancelFunc
+				checkCtx, cancel = context.WithTimeout(ctx, s.CheckTimeout)
+				defer cancel()
+			}
+			checkDomain(checkCtx, s.Store, s.Client, entry, time.Now())
 		}()
 	}
 

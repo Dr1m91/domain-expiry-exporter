@@ -37,7 +37,7 @@ func TestMulti(t *testing.T) {
 	})
 	t.Run("no client succeed", func(t *testing.T) {
 		expire, err := NewMultiClient(clifail(0), clifail(0), clifail(0)).ExpireTime(ctx, "a", "")
-		require.EqualError(t, err, "foo")
+		require.EqualError(t, err, "foo; foo; foo")
 		require.Equal(t, expire, time.Time{})
 	})
 }
