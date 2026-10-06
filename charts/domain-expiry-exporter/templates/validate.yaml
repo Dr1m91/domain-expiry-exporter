@@ -1,0 +1,3 @@
+{{- if and .Values.redis.enabled (not .Values.valkey.enabled) (not .Values.redis.host) }}
+{{- fail "redis.host is required when redis.enabled=true and valkey.enabled=false" }}
+{{- end }}

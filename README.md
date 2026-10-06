@@ -125,6 +125,20 @@ redis:
     key: password
 ```
 
+Or let the chart run Valkey next to the exporter (optional subchart). Create a
+secret with a `password` key first:
+
+```bash
+kubectl create secret generic redis --from-literal=password="$(openssl rand -hex 16)"
+```
+
+```yaml
+valkey:
+  enabled: true
+  auth:
+    usersExistingSecret: redis
+```
+
 See [charts/domain-expiry-exporter/values.yaml](./charts/domain-expiry-exporter/values.yaml)
 for all options.
 

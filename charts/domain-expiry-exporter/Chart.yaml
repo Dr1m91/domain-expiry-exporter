@@ -10,3 +10,8 @@ sources:
 maintainers:
   - name: dr1m91
     url: https://github.com/dr1m91
+dependencies:
+  - name: valkey
+    version: 0.12.0
+    repository: https://valkey.io/valkey-helm
+    condition: valkey.enabled

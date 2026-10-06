@@ -40,3 +40,30 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{- define "domain-expiry-exporter.redisEnabled" -}}
+{{- if or .Values.redis.enabled .Values.valkey.enabled -}}true{{- end -}}
+{{- end }}
+
+{{- define "domain-expiry-exporter.redisHost" -}}
+{{- if .Values.redis.host -}}
+{{- .Values.redis.host -}}
+{{- else if .Values.valkey.fullnameOverride -}}
+{{- .Values.valkey.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := default "valkey" .Values.valkey.nameOverride -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{- define "domain-expiry-exporter.redisSecretName" -}}
+{{- if .Values.redis.passwordSecret.name -}}
+{{- .Values.redis.passwordSecret.name -}}
+{{- else if .Values.valkey.enabled -}}
+{{- .Values.valkey.auth.usersExistingSecret -}}
+{{- end -}}
+{{- end }}

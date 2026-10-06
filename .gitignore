@@ -3,3 +3,4 @@
 *.log
 domains.yaml
 coverage.out
+charts/*/charts/

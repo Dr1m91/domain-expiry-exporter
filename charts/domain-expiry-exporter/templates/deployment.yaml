@@ -39,8 +39,8 @@ spec:
             - --scan-interval={{ .Values.exporter.scanInterval }}
             - --stale-after={{ .Values.exporter.staleAfter }}
             - --concurrency={{ .Values.exporter.concurrency }}
-            {{- if .Values.redis.enabled }}
-            - --redis-addr={{ .Values.redis.host }}:{{ .Values.redis.port }}
+            {{- if include "domain-expiry-exporter.redisEnabled" . }}
+            - --redis-addr={{ include "domain-expiry-exporter.redisHost" . }}:{{ .Values.redis.port }}
             {{- with .Values.redis.username }}
             - --redis-username={{ . }}
             {{- end }}
@@ -50,12 +50,12 @@ spec:
             {{- if .Values.domains }}
             - --config=/etc/domain-expiry-exporter/domains.yaml
             {{- end }}
-          {{- if and .Values.redis.enabled .Values.redis.passwordSecret.name }}
+          {{- if and (include "domain-expiry-exporter.redisEnabled" .) (include "domain-expiry-exporter.redisSecretName" .) }}
           env:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.redis.passwordSecret.name }}
+                  name: {{ include "domain-expiry-exporter.redisSecretName" . }}
                   key: {{ .Values.redis.passwordSecret.key }}
           {{- end }}
           ports:

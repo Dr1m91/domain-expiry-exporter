@@ -59,3 +59,25 @@ redis:
     key: password
   key: domain-expiry-exporter:entries
   persistInterval: 10s
+
+valkey:
+  enabled: false
+  fullnameOverride: ""
+  auth:
+    enabled: true
+    usersExistingSecret: ""
+    aclUsers:
+      default:
+        permissions: "~* &* +@all"
+        passwordKey: password
+  deploymentStrategy: Recreate
+  readinessProbe:
+    enabled: true
+  dataStorage:
+    enabled: true
+    requestedSize: 1Gi
+  valkeyConfig: |
+    maxmemory 64mb
+    maxmemory-policy volatile-lru
+    save 60 1
+    appendonly no
