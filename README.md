@@ -11,15 +11,13 @@ each other.
 ## Features
 
 - RDAP lookups with automatic WHOIS fallback
-- Adaptive check intervals: domains close to expiry are checked more often,
-  domains far from expiry are checked less often
+- Adaptive check intervals: domains close to expiry are checked more often
 - Exponential backoff on repeated failures, exposed as a metric
 - Bounded concurrency for registrar lookups
 - Blackbox-style `/probe` endpoint: the first request registers a domain, no
   domain list is needed
 - Automatic eviction of domains that are no longer scraped
-- Optional static domain list via `--config`
-- Optional Redis persistence, so the cache survives restarts
+- Optional static domain list and optional Redis persistence
 
 ## How it works
 
@@ -30,28 +28,18 @@ each other.
    otherwise.
 3. A failed check is retried with a growing delay (1 minute, doubling up to
    1 hour) and counted in `domain_consecutive_failures`.
-4. A domain that Prometheus has not requested for `--stale-after` is forgotten.
+4. A domain that Prometheus has not requested for 24 hours is forgotten.
 
 Until the first successful check of a new domain, only
 `domain_consecutive_failures` is exposed for it.
 
-## Usage
-
-```bash
-domain-expiry-exporter \
-  --bind=:9222 \
-  --scan-interval=1m \
-  --stale-after=24h \
-  --concurrency=20
-```
-
-With Docker:
+## Quick start
 
 ```bash
 docker run -d -p 9222:9222 ghcr.io/dr1m91/domain-expiry-exporter:<version>
 ```
 
-Prometheus scrape config (blackbox-style, dynamic domain discovery):
+Prometheus scrape config (blackbox-style, domains are discovered from targets):
 
 ```yaml
 - job_name: domain-expiry
@@ -65,8 +53,8 @@ Prometheus scrape config (blackbox-style, dynamic domain discovery):
       replacement: domain-expiry-exporter:9222
 ```
 
-Or seed a static list at startup with `--config=domains.yaml`. These domains
-are never forgotten:
+Or seed a static list with `--config=domains.yaml`. These domains are never
+forgotten:
 
 ```yaml
 domains:
@@ -74,23 +62,9 @@ domains:
   - another-example.com
 ```
 
-## Flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `--bind` | `:9222` | Address to listen on |
-| `--scan-interval` | `1m` | How often the scheduler looks for domains that are due for a check |
-| `--concurrency` | `20` | Maximum number of simultaneous RDAP/WHOIS checks |
-| `--check-timeout` | `30s` | Timeout of a single check |
-| `--stale-after` | `24h` | Forget a domain that Prometheus has not requested for this long |
-| `--config` | | Optional YAML list of domains that are never forgotten |
-| `--redis-addr` | | Redis address (`host:port`); empty keeps the cache in memory only |
-| `--redis-username` | | Redis ACL username |
-| `--redis-password` | | Redis password, also read from the `REDIS_PASSWORD` variable |
-| `--redis-key` | `domain-expiry-exporter:entries` | Redis hash that holds the persisted entries |
-| `--persist-interval` | `10s` | How often changes are flushed to Redis |
-| `--debug` | `false` | Verbose logs |
-| `--logFormat` | `console` | `console` or `json` |
+Run with `--help` for all flags. The ones you are most likely to change are
+`--scan-interval` (default `1m`), `--concurrency` (default `20`) and
+`--stale-after` (default `24h`).
 
 ## Persistence
 
@@ -99,12 +73,8 @@ By default the cache lives in memory and is rebuilt after a restart. With
 update does not re-check every domain at once.
 
 Memory stays the source of truth: `/probe` and `/metrics` never wait for Redis.
-The exporter loads the saved entries once at startup, then writes changes in
-the background every `--persist-interval` and once more on shutdown. If Redis
-is unavailable at startup, the exporter starts with an empty cache and logs a
-warning. If it goes down later, the exporter keeps working and retries the
-writes.
-
+Changes are flushed in the background every 10 seconds and once more on
+shutdown. If Redis is down, the exporter keeps working and retries the writes.
 State is per instance: run a single replica per Redis.
 
 ## Helm chart
@@ -125,8 +95,8 @@ redis:
     key: password
 ```
 
-Or let the chart run Valkey next to the exporter (optional subchart). Create a
-secret with a `password` key first:
+Or let the chart run Valkey next to the exporter. Create a secret with a
+`password` key first:
 
 ```bash
 kubectl create secret generic redis --from-literal=password="$(openssl rand -hex 16)"
@@ -139,8 +109,7 @@ valkey:
     usersExistingSecret: redis
 ```
 
-See [charts/domain-expiry-exporter/values.yaml](./charts/domain-expiry-exporter/values.yaml)
-for all options.
+See [values.yaml](./charts/domain-expiry-exporter/values.yaml) for all options.
 
 ## Metrics
 
