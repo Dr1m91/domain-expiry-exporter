@@ -61,3 +61,14 @@ vmServiceScrape:
   enabled: false
   interval: 1m
   labels: {}
+
+redis:
+  enabled: false
+  host: ""
+  port: 6379
+  username: ""
+  passwordSecret:
+    name: ""
+    key: password
+  key: domain-expiry-exporter:entries
+  persistInterval: 10s

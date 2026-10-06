@@ -39,9 +39,25 @@ spec:
             - --scan-interval={{ .Values.exporter.scanInterval }}
             - --stale-after={{ .Values.exporter.staleAfter }}
             - --concurrency={{ .Values.exporter.concurrency }}
+            {{- if .Values.redis.enabled }}
+            - --redis-addr={{ .Values.redis.host }}:{{ .Values.redis.port }}
+            {{- with .Values.redis.username }}
+            - --redis-username={{ . }}
+            {{- end }}
+            - --redis-key={{ .Values.redis.key }}
+            - --persist-interval={{ .Values.redis.persistInterval }}
+            {{- end }}
             {{- if .Values.domains }}
             - --config=/etc/domain-expiry-exporter/domains.yaml
             {{- end }}
+          {{- if and .Values.redis.enabled .Values.redis.passwordSecret.name }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.passwordSecret.name }}
+                  key: {{ .Values.redis.passwordSecret.key }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.exporter.port }}
