@@ -139,18 +139,15 @@ for all options.
 
 All metrics carry a `domain` label.
 
-## Roadmap
-
-- [ ] On-disk persistence
-- [ ] Rate limit per registry
-
 ## Origin
 
 Started from [caarlos0/domain_exporter](https://github.com/caarlos0/domain_exporter)
-(archived August 2026), which probed WHOIS/RDAP synchronously on every scrape,
-which works for a handful of domains but not for fleets in the thousands. This
-project keeps the original RDAP/WHOIS probing logic and rebuilds the caching
-and scheduling layer around it.
+(archived August 2026) and reuses its RDAP and WHOIS client code. Many thanks
+to Carlos Alexandro Becker for the original work.
+
+The architecture is different: lookups run in a background scheduler with
+adaptive intervals instead of being triggered by scrapes, domains are tracked
+in a registry fed by scrape requests, and the state can be persisted in Redis.
 
 ## License
 
